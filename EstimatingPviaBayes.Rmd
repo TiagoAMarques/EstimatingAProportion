@@ -1,0 +1,114 @@
+---
+title: "About Estimating Proportions in a Bayesian Way"
+author: "Tiago A. Marques"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,cache=TRUE)
+library(nimble)
+```
+
+# Introduction
+
+Let's start by creating a situation in which we have some binomial data, but extremely overdispersed. 
+
+We enforce that by essentially creating a mixture of binomials.
+
+```{r}
+set.seed(1234)
+nreps<-20
+ntrials<-50
+mydata<-rbinom(n=nreps,size=ntrials,prob=rep(c(0.5,0.99),times=c(2,18)))
+myps<-mydata/ntrials
+hist(myps)
+```
+
+In this case, a standard binomial 95% CI will lead to inadmissible results
+
+```{r}
+myttest<-t.test(myps)
+myttest
+```
+
+However, in a bayesian setting, than canot happen. Check it out.
+
+Define a model in Nimble
+
+```{r,nimblemodel}
+## define the model
+EstimateP <- nimbleCode({
+  # prior on the proportion of success
+  p ~ dunif(0,1)
+  for (i in 1:N){
+    #on the response scale
+    nsucs[i] ~ dbin(prob = p, size = 50)
+  }
+})
+```
+
+And then we define the required constants, data, and initial values, as well as the nodes to monitor in the MCMC
+
+```{r,nimblepars}
+constants <- list(N = nreps)
+#data
+data <- list(nsucs = mydata)
+
+inits <- list(p = 0.5)
+```
+
+
+```{r,createmodel}
+## create the model object
+myModel <- nimbleModel(code = EstimateP, constants = constants, data = data, 
+                       inits = inits) ## Add buildDerivs = TRUE for AD
+cmyModel <- compileNimble(myModel)
+```
+
+```{r,parstomonitorynl}
+#things to monitor
+tomonP<-c("p")
+```
+
+Then we run the code, considering 60000 iterations with a 10000 iterations burnin period, leaving 50000 iterations for inference.
+
+```{r,nimblerunynl,cache=TRUE}
+test<-nimbleMCMC(myModel,monitors=tomonP,niter=60000,nburnin=10000,progressBar=TRUE,summary=TRUE)
+```
+
+There were no apparent issues with convergence/mixing of MCMC chains
+
+```{r}
+par(mfrow=c(1,1))
+#trace plot intercept
+plot(test$samples,pch=".",ylab="p")
+```
+
+We can look at the main results, i.e. all top-level stochastic nodes of the model, namely the intercept, the dispersion parameter and the standard deviations of the random effects
+
+```{r}
+#look at main results - 
+test$summary
+```
+
+We can see posterior distributions
+
+```{r}
+par(mfrow=c(1,1))
+#posterior plot intercept
+hist(test$samples,xlab="p",main="",xlim=myttest$conf.int)
+abline(v=c(myttest$conf.int,myttest$estimate),col="red",lty=2,lwd=2)
+abline(v=quantile(test$samples,probs=c(0.025,0.5,0.975)),col="green",lty=2,lwd=2)       
+```
+
+Clearly, the naive estimator of a proportion does not use the $a$ $priori$ information that we have about a proportion, which the Bayesian implementation does, even if just saying that all possible values for p are equally likely, which was what we had in the form of our prior for the proportion.
+
+
+# Food for thought
+
+Don't judge me. This is a brain dump. The way I created the data was really contrived, but makes me wonder about something. Observing overdisperison in a binomial setting implies that we are missing relevant covariates, as otherwise, there would not be overdispersion. In other words, is overdispersion necessarily a consequence of the violation of the assumption of a single probability of success? See e.g. Ascari and Migliorati 2021 for examples and motivation.
+
+# References
+
+Ascari R, Migliorati S. A new regression model for overdispersed binomial data accounting for outliers and an excess of zeros. Stat Med. 2021 Jul 30;40(17):3895-3914. doi: 10.1002/sim.9005. Epub 2021 May 7. PMID: 33960503; PMCID: PMC8360060.
