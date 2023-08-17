@@ -12,27 +12,45 @@ library(nimble)
 
 # Introduction
 
+This was an attempt to make a motivating example for students that would be interesting from a Bayesian perspective. 
+
+It was literally destroyed by Rosina Savisaar - to whom I thank the insights - which noted a couple of very sensible aspects that indeed make it a bad example:
+
+1. The "normal" CI used to illustrate the frequentist framework is not fair (a suitable CI for proportions will not lead to inadmissible results, see below);
+2. In a Bayesian statistical analysis, the key aspect to constrain predictions to be admissible is not the prior, but the link function. In that sense, Bayesian implementations and frequentist implementations do not differ much.
+
+# The (now dead) example
+
 Let's start by creating a situation in which we have some binomial data, but extremely overdispersed. 
 
 We enforce that by essentially creating a mixture of binomials.
 
 ```{r}
 set.seed(1234)
-nreps<-20
-ntrials<-50
-mydata<-rbinom(n=nreps,size=ntrials,prob=rep(c(0.5,0.99),times=c(2,18)))
+nreps<-10
+ntrials<-10
+mydata<-rbinom(n=nreps,size=ntrials,prob=rep(c(0.05,0.99),times=c(nreps*0.1,nreps*0.9)))
 myps<-mydata/ntrials
 hist(myps)
 ```
 
-In this case, a standard binomial 95% CI will lead to inadmissible results
+In this case, a naive 95% CI will lead to inadmissible results (note this is wrong in more than just 1 way!)
 
 ```{r}
 myttest<-t.test(myps)
 myttest
 ```
 
-However, in a bayesian setting, than canot happen. Check it out.
+Note a more suitable binomial proportion 95% CI will NOT suffer from the same problem
+
+```{r}
+n<-sum(rep(ntrials,nreps))
+estp<-sum(mydata)/n
+pmargin<-qnorm(0.975,mean=0,sd=1)*sqrt(estp*(1-estp)/n)
+estp-pmargin;estp+pmargin
+```
+
+However, in a Bayesian setting, than cannot happen. Let's check it out.
 
 Define a model in Nimble
 
@@ -103,7 +121,6 @@ abline(v=quantile(test$samples,probs=c(0.025,0.5,0.975)),col="green",lty=2,lwd=2
 ```
 
 Clearly, the naive estimator of a proportion does not use the $a$ $priori$ information that we have about a proportion, which the Bayesian implementation does, even if just saying that all possible values for p are equally likely, which was what we had in the form of our prior for the proportion.
-
 
 # Food for thought
 
